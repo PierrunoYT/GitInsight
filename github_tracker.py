@@ -1,5 +1,6 @@
 import os
 import logging
+import time
 from typing import Dict, List, Optional
 import requests
 import pandas as pd
@@ -15,7 +16,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class GitHubContributionTracker:
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the GitHub Contribution Tracker with environment variables and setup."""
         load_dotenv()
         self._validate_env_vars()
@@ -23,20 +24,36 @@ class GitHubContributionTracker:
         self.username = os.getenv('GITHUB_USERNAME')
         self.headers = {'Authorization': f'token {self.github_token}'} if self.github_token else {}
         self.data_dir = 'data'
+        self.session = requests.Session()
+        self.session.headers.update(self.headers)
         self.ensure_data_directory()
 
     def _validate_env_vars(self) -> None:
-        """Validate required environment variables are set."""
+        """
+        Validate required environment variables are set.
+        
+        Raises:
+            ValueError: If any required environment variables are missing.
+        """
         required_vars = ['GITHUB_TOKEN', 'GITHUB_USERNAME']
         missing_vars = [var for var in required_vars if not os.getenv(var)]
         if missing_vars:
             raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
     def ensure_data_directory(self) -> None:
-        """Create data directory if it doesn't exist."""
-        if not os.path.exists(self.data_dir):
-            os.makedirs(self.data_dir)
-            logger.info(f"Created data directory: {self.data_dir}")
+        """
+        Create data directory if it doesn't exist.
+        
+        Raises:
+            OSError: If directory creation fails.
+        """
+        try:
+            if not os.path.exists(self.data_dir):
+                os.makedirs(self.data_dir)
+                logger.info(f"Created data directory: {self.data_dir}")
+        except OSError as e:
+            logger.error(f"Failed to create data directory: {str(e)}")
+            raise
 
     def fetch_contributions(self, days: int = 365) -> pd.DataFrame:
         """
@@ -46,7 +63,10 @@ class GitHubContributionTracker:
             days (int): Number of days of history to fetch (default: 365)
             
         Returns:
-            pd.DataFrame: DataFrame containing contribution data
+            pd.DataFrame: DataFrame containing contribution data with columns:
+                         - date: Date of contribution
+                         - type: Type of contribution event
+                         - repo: Repository name
             
         Raises:
             ValueError: If days is not a positive integer
@@ -64,9 +84,8 @@ class GitHubContributionTracker:
 
         while True:
             try:
-                response = requests.get(
+                response = self.session.get(
                     f"{url}?page={page}",
-                    headers=self.headers,
                     timeout=10
                 )
                 response.raise_for_status()
@@ -78,7 +97,8 @@ class GitHubContributionTracker:
                     wait_time = reset_time - datetime.now().timestamp()
                     if wait_time > 0:
                         logger.warning(f"Rate limit reached. Waiting {wait_time:.2f} seconds...")
-                        break
+                        time.sleep(wait_time + 1)  # Add 1 second buffer
+                        continue
 
                 events = response.json()
                 if not events:  # No more events
@@ -103,7 +123,7 @@ class GitHubContributionTracker:
 
         return pd.DataFrame(contributions)
 
-    def analyze_contributions(self, df: pd.DataFrame) -> Dict:
+    def analyze_contributions(self, df: pd.DataFrame) -> Dict[str, any]:
         """
         Analyze contribution patterns.
         
@@ -111,7 +131,11 @@ class GitHubContributionTracker:
             df (pd.DataFrame): DataFrame containing contribution data
             
         Returns:
-            Dict: Analysis results
+            Dict[str, any]: Analysis results containing:
+                           - total_contributions: Total number of contributions
+                           - contribution_types: Dictionary of contribution types and counts
+                           - active_repositories: Number of unique repositories
+                           - daily_average: Average contributions per day
         """
         if df.empty:
             logger.warning("No contributions found in the specified time period")
@@ -142,7 +166,10 @@ class GitHubContributionTracker:
         Args:
             df (pd.DataFrame): DataFrame containing contribution data
             save_path (str, optional): Path to save the visualization
-            figsize (tuple): Figure size (width, height)
+            figsize (tuple): Figure size (width, height) in inches
+            
+        Raises:
+            OSError: If saving the visualization fails
         """
         if df.empty:
             logger.warning("No data to visualize")
@@ -160,38 +187,52 @@ class GitHubContributionTracker:
         plt.tight_layout()
         
         if save_path:
-            plt.savefig(save_path)
-            logger.info(f"Saved visualization to {save_path}")
+            try:
+                plt.savefig(save_path)
+                logger.info(f"Saved visualization to {save_path}")
+            except OSError as e:
+                logger.error(f"Failed to save visualization: {str(e)}")
+                raise
         else:
             plt.show()
         plt.close()
 
-    def save_data(self, df: pd.DataFrame, analysis: Dict) -> None:
+    def save_data(self, df: pd.DataFrame, analysis: Dict[str, any]) -> None:
         """
         Save contribution data and analysis.
         
         Args:
             df (pd.DataFrame): DataFrame containing contribution data
-            analysis (Dict): Analysis results
+            analysis (Dict[str, any]): Analysis results
+            
+        Raises:
+            OSError: If saving data fails
         """
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         
-        # Save raw data
-        data_path = f'{self.data_dir}/contributions_{timestamp}.csv'
-        df.to_csv(data_path, index=False)
-        logger.info(f"Saved contribution data to {data_path}")
-        
-        # Save analysis
-        analysis_path = f'{self.data_dir}/analysis_{timestamp}.txt'
-        with open(analysis_path, 'w') as f:
-            for key, value in analysis.items():
-                f.write(f'{key}: {value}\n')
-        logger.info(f"Saved analysis to {analysis_path}")
+        try:
+            # Save raw data
+            data_path = os.path.join(self.data_dir, f'contributions_{timestamp}.csv')
+            df.to_csv(data_path, index=False)
+            logger.info(f"Saved contribution data to {data_path}")
+            
+            # Save analysis
+            analysis_path = os.path.join(self.data_dir, f'analysis_{timestamp}.txt')
+            with open(analysis_path, 'w') as f:
+                for key, value in analysis.items():
+                    f.write(f'{key}: {value}\n')
+            logger.info(f"Saved analysis to {analysis_path}")
+        except OSError as e:
+            logger.error(f"Failed to save data: {str(e)}")
+            raise
 
 def main() -> None:
     """
     Main function to run the GitHub contribution tracking process.
     Fetches, analyzes, visualizes, and saves GitHub contribution data.
+    
+    Raises:
+        Exception: If any step of the process fails
     """
     tracker = GitHubContributionTracker()
     
@@ -203,10 +244,8 @@ def main() -> None:
         analysis_results = tracker.analyze_contributions(contributions_df)
         
         logger.info("Creating visualization...")
-        tracker.visualize_contributions(
-            contributions_df,
-            save_path=f'{tracker.data_dir}/contribution_graph.png'
-        )
+        viz_path = os.path.join(tracker.data_dir, 'contribution_graph.png')
+        tracker.visualize_contributions(contributions_df, save_path=viz_path)
         
         logger.info("Saving results...")
         tracker.save_data(contributions_df, analysis_results)
@@ -219,6 +258,8 @@ def main() -> None:
     except Exception as e:
         logger.error(f"Error in main execution: {str(e)}")
         raise
+    finally:
+        tracker.session.close()
 
 if __name__ == "__main__":
     main()
