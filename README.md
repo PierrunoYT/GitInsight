@@ -1,4 +1,4 @@
-# GitHub Contribution Tracker
+# GitInsight
 
 A Python-based tool for analyzing and visualizing your GitHub contributions locally. Track your coding activity, analyze contribution patterns, and gain insights into your development productivity.
 
@@ -19,8 +19,8 @@ A Python-based tool for analyzing and visualizing your GitHub contributions loca
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/github-contribution-tracker.git
-cd github-contribution-tracker
+git clone https://github.com/PierrunoYT/GitInsight.git
+cd GitInsight
 ```
 
 2. Install dependencies:
@@ -65,3 +65,11 @@ The tool provides insights including:
 ## Privacy
 
 All data is stored locally on your machine. No data is sent to external servers beyond the initial GitHub API calls.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Author
+
+PierrunoYT (2024)
